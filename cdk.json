@@ -1,0 +1,24 @@
+{
+  "app": "npx ts-node infra/intelligent-gateway.ts",
+  "context": {
+    "appName": "Intelligent-Gateway",
+    "tags": {
+      "owner": "gen-ai-platform@ncino.com",
+      "uai": "UAI0142"
+    },
+    "targetAccountConfig": [
+      {
+        "accountId": "042279143912",
+        "environmentType": "team",
+        "main": {
+          "region": "us-east-1",
+          "abbreviation": "use1"
+        },
+        "backup": {
+          "region": "",
+          "abbreviation": ""
+        }
+      }
+    ]
+  }
+}

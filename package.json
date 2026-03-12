@@ -1,0 +1,46 @@
+{
+  "name": "@ncino/intelligent-gateway",
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "author": "ncino",
+  "scripts": {
+    "aws:deploy": "npx cdk deploy Intelligent-Gateway-IamStack-$(whoami | tr -d .) -c devMode=true -c suffix=$(whoami | tr -d .) -c deploymentStage=blue -c temporary=true --require-approval never --method direct --asset-parallelism",
+    "aws:deploy:lambda:blue": "npx cdk deploy Intelligent-Gateway-LambdaStack-$(whoami | tr -d .)-blue -c devMode=true -c suffix=$(whoami | tr -d .) -c deploymentStage=blue -c temporary=true --require-approval never --method direct --asset-parallelism",
+    "aws:deploy:lambda:green": "npx cdk deploy Intelligent-Gateway-LambdaStack-$(whoami | tr -d .)-green -c devMode=true -c suffix=$(whoami | tr -d .) -c deploymentStage=green -c temporary=true --require-approval never --method direct --asset-parallelism",
+    "aws:destroy": "npx cdk destroy Intelligent-Gateway-IamStack-$(whoami | tr -d .) -c devMode=true -c suffix=$(whoami | tr -d .) -c deploymentStage=blue -c temporary=true --force --require-approval never",
+    "build": "npm run build:tsc && npm run build:python",
+    "build:tsc": "tsc && npm run format:tsc",
+    "build:python": "UV_NATIVE_TLS=true uv sync && npm run format:python",
+    "format": "npm run format:tsc && npm run format:python",
+    "format:tsc": "eslint . --fix --ext .js,.ts",
+    "format:python": "UV_NATIVE_TLS=true uv run ruff check . --fix && UV_NATIVE_TLS=true uv run ruff format .",
+    "lint": "npm run lint:tsc && npm run lint:python",
+    "lint:tsc": "eslint . --ext .js,.ts --quiet",
+    "lint:python": "UV_NATIVE_TLS=true uv run ruff check .",
+    "test": "npm run test:python",
+    "test:python": "UV_NATIVE_TLS=true uv run pytest --cov --cov-report term-missing"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.7.3",
+    "@typescript-eslint/parser": "^6.7.3",
+    "aws-cdk": "2.1107.0",
+    "esbuild": "^0.19.4",
+    "eslint": "^8.50.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.0",
+    "eslint-plugin-unused-imports": "^4.2.0",
+    "prettier": "^3.0.3",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@aws-cdk/aws-lambda-python-alpha": "2.242.0-alpha.0",
+    "@ncino/aws-cdk": "^3.138.0",
+    "@ncino/cloud-infra": "^2.0.3",
+    "aws-cdk-lib": "2.242.0",
+    "source-map-support": "^0.5.21"
+  }
+}

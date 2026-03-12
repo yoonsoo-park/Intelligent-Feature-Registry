@@ -1,0 +1,29 @@
+.DS_Store
+*.js
+!jest.config.js
+*.d.ts
+node_modules
+
+# CDK
+.cdk.staging
+cdk.out
+cdk.context.json
+
+# Unit test
+coverage
+.coverage
+/reports
+
+# IDE
+.vscode
+.idea
+
+# Python
+dist
+.venv
+__pycache__
+.ruff_cache
+.pytest_cache
+
+# Claude
+.claude
