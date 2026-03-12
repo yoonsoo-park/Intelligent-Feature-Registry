@@ -1,7 +1,7 @@
 {
-  "app": "npx ts-node infra/intelligent-gateway.ts",
+  "app": "npx ts-node infra/intelligent-feature-registry.ts",
   "context": {
-    "appName": "Intelligent-Gateway",
+    "appName": "Intelligent-Feature-Registry",
     "tags": {
       "owner": "gen-ai-platform@ncino.com",
       "uai": "UAI0142"

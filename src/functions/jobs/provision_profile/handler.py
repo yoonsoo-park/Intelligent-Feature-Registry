@@ -95,7 +95,7 @@ class Handler(ALambdaHandler):
             {"key": "team", "value": team},
             {"key": "feature", "value": feature_name},
             {"key": "profile_id", "value": profile_id},
-            {"key": "managed_by", "value": "intelligent-gateway"},
+            {"key": "managed_by", "value": "intelligent-feature-registry"},
         ]
         if isinstance(tags, dict):
             for k, v in tags.items():

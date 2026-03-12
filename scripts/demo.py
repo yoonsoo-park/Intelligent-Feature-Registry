@@ -54,7 +54,7 @@ def main():
         )
         return
 
-    print("=== Intelligent Gateway Demo ===\n")
+    print("=== Intelligent Feature Registry Demo ===\n")
 
     print("Step 1: Register a new profile")
     result = register_profile(

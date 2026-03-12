@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code when working with code in this repository.
 
 ## Project Overview
-Intelligent Gateway - automates Bedrock inference profile provisioning for development teams.
+Intelligent Feature Registry - automates Bedrock inference profile provisioning for development teams.
 Architecture: API Gateway -> Lambda -> DynamoDB -> DynamoDB Stream -> Provisioner Lambda -> Bedrock
 
 ## Build Commands

@@ -14,7 +14,7 @@ def mock_env_vars():
             "featureRoleArn": "arn:aws:iam::042279143912:role/test-role",
             "databaseTableName": "test-table",
             "databaseTableGsi1Name": "gsi1",
-            "service": "intelligent-gateway",
+            "service": "intelligent-feature-registry",
         },
     ):
         yield

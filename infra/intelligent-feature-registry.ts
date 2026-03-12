@@ -9,14 +9,14 @@ const deployRegion = process.env.CDK_DEPLOY_REGION || process.env.CDK_DEFAULT_RE
 
 console.log('🛠 Feature');
 const feature = new Feature({
-  name: 'intelligent-gateway',
-  description: 'Intelligent Gateway for Bedrock inference profile provisioning',
+  name: 'intelligent-feature-registry',
+  description: 'Intelligent Feature Registry for Bedrock inference profile provisioning',
   standardFeature: false
 });
 
 if (Utility.isDevopsAccount()) {
   feature.createDeploymentPipeline({
-    repositoryName: 'intelGateway',
+    repositoryName: 'intelligentFeatureRegistry',
     isS3Source: true,
     branch: 'release',
     deployBuildSpecPath: 'config/deploy-buildspec.yml',
@@ -28,7 +28,7 @@ if (Utility.isDevopsAccount()) {
 
   console.log('🛠 Data Stack');
   const dataStack = new DataStack(feature, feature.getFullName('DataStack'), {
-    description: 'Contains data resources for intelligent-gateway.',
+    description: 'Contains data resources for intelligent-feature-registry.',
     env: {
       account: deployAccount,
       region: deployRegion
@@ -38,7 +38,7 @@ if (Utility.isDevopsAccount()) {
 
   console.log('🛠 Lambda Stack');
   const lambdaStack = new LambdaStack(feature, `${feature.getFullName('LambdaStack')}-${stageName}`, {
-    description: 'Contains lambda functions for intelligent-gateway.',
+    description: 'Contains lambda functions for intelligent-feature-registry.',
     env: {
       account: deployAccount,
       region: deployRegion
@@ -53,7 +53,7 @@ if (Utility.isDevopsAccount()) {
 
   console.log('🛠 Api Stack');
   const apiStack = new ApiStack(feature, feature.getFullName('ApiStack'), {
-    description: 'Contains APIs for intelligent-gateway.',
+    description: 'Contains APIs for intelligent-feature-registry.',
     env: {
       account: deployAccount,
       region: deployRegion

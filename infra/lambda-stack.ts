@@ -130,7 +130,7 @@ export class LambdaStack extends StageableStack {
       deploymentStage: this.node.tryGetContext('deploymentStage')
         ? this.node.tryGetContext('deploymentStage')
         : ApiStageType.BLUE,
-      service: this.node.tryGetContext('appName')?.toLowerCase() || 'intelligent-gateway',
+      service: this.node.tryGetContext('appName')?.toLowerCase() || 'intelligent-feature-registry',
       ...env
     };
     new LogGroup(this, `/aws/lambda/${functionName}`);
