@@ -24,6 +24,7 @@ export class LambdaStack extends StageableStack {
   public lookupProfile: Function;
   public provisionProfile: Function;
   public deleteProfile: Function;
+  public listModels: Function;
 
   constructor(feature: Feature, id: string, props: LambdaStackProps) {
     super(feature, id, props);
@@ -58,6 +59,10 @@ export class LambdaStack extends StageableStack {
     this.deleteProfile = this.createFunction('DeleteProfile', 'api/delete_profile', {
       databaseTableName: props.databaseTableName,
       databaseTableGsi1Name: props.databaseTableGsi1Name
+    });
+
+    this.listModels = this.createFunction('ListModels', 'api/list_models', {
+      ALLOWED_PROVIDERS: 'anthropic,amazon'
     });
 
     this.provisionProfile.addEventSource(
@@ -100,6 +105,8 @@ export class LambdaStack extends StageableStack {
           'bedrock:CreateInferenceProfile',
           'bedrock:GetInferenceProfile',
           'bedrock:DeleteInferenceProfile',
+          'bedrock:ListFoundationModels',
+          'bedrock:ListInferenceProfiles',
           'bedrock:TagResource'
         ],
         resources: ['*']

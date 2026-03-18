@@ -60,7 +60,8 @@ if (Utility.isDevopsAccount()) {
     },
     registerProfile: lambdaStack.registerProfile,
     lookupProfile: lambdaStack.lookupProfile,
-    deleteProfile: lambdaStack.deleteProfile
+    deleteProfile: lambdaStack.deleteProfile,
+    listModels: lambdaStack.listModels
   });
   apiStack.addDependency(lambdaStack);
   feature.setStack('apiStack', apiStack);

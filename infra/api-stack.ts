@@ -16,12 +16,13 @@ export interface ApiStackProps extends StackProps {
   readonly registerProfile: Function;
   readonly lookupProfile: Function;
   readonly deleteProfile: Function;
+  readonly listModels: Function;
 }
 
 export class ApiStack extends Stack {
   private feature: Feature;
 
-  private static readonly STAGE_VARIABLES = ['RegisterProfile', 'LookupProfile', 'DeleteProfile'];
+  private static readonly STAGE_VARIABLES = ['RegisterProfile', 'LookupProfile', 'DeleteProfile', 'ListModels'];
 
   private createStageVariables(lambdaNames: string[]): ApiStageVariable[] {
     const variables: ApiStageVariable[] = [];
@@ -167,5 +168,13 @@ export class ApiStack extends Stack {
       ],
       { stageVariable: 'DeleteProfile', enableCustomStatusCodes: true }
     );
+
+    const modelsResource = gateway.addResource(gateway.root, 'models');
+    gateway.enableCors(modelsResource);
+
+    gateway.addMethod(ApiMethodType.GET, modelsResource, 'ListModels', props.listModels, [], {
+      stageVariable: 'ListModels',
+      enableCustomStatusCodes: true
+    });
   }
 }
