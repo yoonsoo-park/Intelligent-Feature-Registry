@@ -1,8 +1,8 @@
 import os
 from typing import Any
 
+import boto3
 from aws_lambda_powertools.utilities.typing import LambdaContext
-from boto3.dynamodb.conditions import Key
 from domain.common.controller import RestUtil
 from domain.common.error import InvalidRequestError, NotFoundError
 from ncino.handler import ALambdaHandler
@@ -16,33 +16,35 @@ class Handler(ALambdaHandler):
 
         team = event.get("team")
         feature_name = event.get("featureName")
+        model_id = event.get("modelId")
 
         if not team:
             raise InvalidRequestError("Missing required query parameter: team")
         if not feature_name:
             raise InvalidRequestError("Missing required query parameter: featureName")
+        if not model_id:
+            raise InvalidRequestError("Missing required query parameter: modelId")
 
         table_name = os.environ["databaseTableName"]
-        index_name = os.environ["databaseTableGsi1Name"]
+        region = os.environ.get("region", "us-east-1")
 
-        dynamodb = self.assume_profile_role().resource("dynamodb")
+        dynamodb = boto3.resource("dynamodb", region_name=region)
         table = dynamodb.Table(table_name)
 
-        response = table.query(
-            IndexName=index_name,
-            KeyConditionExpression=(
-                Key("gsi1pk").eq(f"T#{self.tenant_id}#TEAM#{team}")
-                & Key("gsi1sk").eq(f"PROFILE#{feature_name}")
-            ),
+        response = table.get_item(
+            Key={
+                "pk": "PROFILE",
+                "sk": f"TEAM#{team}#FEATURE#{feature_name}#MODEL#{model_id}",
+            },
+            ConsistentRead=True,
         )
 
-        items = response.get("Items", [])
-        if not items:
+        item = response.get("Item")
+        if not item:
             raise NotFoundError(
-                f"No profile found for team={team}, featureName={feature_name}"
+                f"No profile found for team={team}, featureName={feature_name}, modelId={model_id}"
             )
 
-        item = items[0]
         status = item.get("status")
 
         result: dict[str, Any] = {

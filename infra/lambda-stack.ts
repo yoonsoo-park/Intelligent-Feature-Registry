@@ -35,7 +35,8 @@ export class LambdaStack extends StageableStack {
     this.registerProfile = this.createFunction('RegisterProfile', 'api/register_profile', {
       databaseTableName: props.databaseTableName,
       databaseTableGsi1Name: props.databaseTableGsi1Name,
-      MAX_PROFILES_PER_TEAM: '10'
+      MAX_PROFILES_PER_TEAM: '10',
+      MAX_TEAMS: '2'
     });
 
     this.lookupProfile = this.createFunction('LookupProfile', 'api/lookup_profile', {
@@ -43,11 +44,16 @@ export class LambdaStack extends StageableStack {
       databaseTableGsi1Name: props.databaseTableGsi1Name
     });
 
-    this.provisionProfile = this.createFunction('ProvisionProfile', 'jobs/provision_profile', {
-      databaseTableName: props.databaseTableName,
-      databaseTableGsi1Name: props.databaseTableGsi1Name,
-      awsAccountId: this.targetAccount.getTargetAccountId()
-    });
+    this.provisionProfile = this.createFunction(
+      'ProvisionProfile',
+      'jobs/provision_profile',
+      {
+        databaseTableName: props.databaseTableName,
+        databaseTableGsi1Name: props.databaseTableGsi1Name,
+        awsAccountId: this.targetAccount.getTargetAccountId()
+      },
+      Duration.minutes(5)
+    );
 
     this.deleteProfile = this.createFunction('DeleteProfile', 'api/delete_profile', {
       databaseTableName: props.databaseTableName,
@@ -59,7 +65,7 @@ export class LambdaStack extends StageableStack {
         startingPosition: StartingPosition.TRIM_HORIZON,
         filters: [
           FilterCriteria.filter({
-            eventName: ['INSERT'],
+            eventName: ['INSERT', 'MODIFY'],
             dynamodb: {
               NewImage: {
                 type: { S: ['PROFILE'] },
@@ -74,13 +80,17 @@ export class LambdaStack extends StageableStack {
       })
     );
 
-    // ProvisionProfile runs from DynamoDB Stream (no tenant context),
-    // so it needs direct permissions on the LambdaExecutionRole
     this.feature.baseStack.lambdaExecutionRole.addToPrincipalPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        actions: ['dynamodb:UpdateItem', 'dynamodb:GetItem'],
-        resources: [props.databaseTable.tableArn]
+        actions: [
+          'dynamodb:GetItem',
+          'dynamodb:PutItem',
+          'dynamodb:UpdateItem',
+          'dynamodb:DeleteItem',
+          'dynamodb:Query'
+        ],
+        resources: [props.databaseTable.tableArn, `${props.databaseTable.tableArn}/index/*`]
       })
     );
     this.feature.baseStack.lambdaExecutionRole.addToPrincipalPolicy(
@@ -123,7 +133,12 @@ export class LambdaStack extends StageableStack {
     });
   }
 
-  private createFunction(name: string, assetName: string, env?: { [key: string]: string }): PythonFunction {
+  private createFunction(
+    name: string,
+    assetName: string,
+    env?: { [key: string]: string },
+    timeout: Duration = Duration.seconds(29)
+  ): PythonFunction {
     const functionName = this.getFullName(name);
     const environment = {
       region: this.targetAccount.getTargetRegion(),
@@ -143,7 +158,7 @@ export class LambdaStack extends StageableStack {
       environment,
       memorySize: 2048,
       layers: [this.sharedLayer, this.externalLayer],
-      timeout: Duration.minutes(5),
+      timeout,
       bundling: this.getBundlingOptions()
     });
     this.feature.authorizeFunction(lambdaFunction);

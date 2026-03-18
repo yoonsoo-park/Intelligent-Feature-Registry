@@ -27,18 +27,17 @@ def mock_table():
 
 
 @pytest.fixture
-def mock_session(mock_table):
-    session = MagicMock()
+def mock_boto3_resource(mock_table):
     dynamodb = MagicMock()
     dynamodb.Table.return_value = mock_table
-    session.resource.return_value = dynamodb
-    return session
+    with patch("src.functions.api.lookup_profile.handler.boto3") as mock_boto3:
+        mock_boto3.resource.return_value = dynamodb
+        yield mock_boto3
 
 
 @pytest.fixture
-def mock_role_session(mock_session):
+def mock_role_session():
     with patch("ncino.handler.RoleSessionCache") as mock_cache_cls:
-        mock_cache_cls.return_value.get_session.return_value = mock_session
         yield mock_cache_cls
 
 
@@ -50,66 +49,105 @@ def _create_event(params: dict) -> dict:
 
 
 class TestLookupProfileHandler:
-    def test_returns_tenant_not_found_when_no_tenant(self, mock_role_session):
+    def test_returns_tenant_not_found_when_no_tenant(
+        self, mock_role_session, mock_boto3_resource
+    ):
         from src.functions.api.lookup_profile.handler import handler
 
         mock_role_session.return_value.get_session.side_effect = Exception("no role")
 
-        event = {"team": "marketing", "featureName": "chatbot"}
+        event = {"team": "marketing", "featureName": "chatbot", "modelId": "test"}
         result = handler(event, MagicMock())
 
         assert result["lambdaReturnCode"] == 404
 
-    def test_returns_error_when_team_missing(self, mock_role_session):
+    def test_returns_error_when_team_missing(
+        self, mock_role_session, mock_boto3_resource
+    ):
         from src.functions.api.lookup_profile.handler import handler
 
-        event = _create_event({"featureName": "chatbot"})
+        event = _create_event({"featureName": "chatbot", "modelId": "test"})
         result = handler(event, MagicMock())
 
         assert result["lambdaReturnCode"] == 400
         response = json.loads(result["response"])
         assert "team" in response["message"]
 
-    def test_returns_error_when_profile_name_missing(self, mock_role_session):
+    def test_returns_error_when_profile_name_missing(
+        self, mock_role_session, mock_boto3_resource
+    ):
         from src.functions.api.lookup_profile.handler import handler
 
-        event = _create_event({"team": "marketing"})
+        event = _create_event({"team": "marketing", "modelId": "test"})
         result = handler(event, MagicMock())
 
         assert result["lambdaReturnCode"] == 400
         response = json.loads(result["response"])
         assert "featureName" in response["message"]
 
-    def test_returns_not_found_when_no_items(self, mock_role_session, mock_table):
+    def test_returns_error_when_model_id_missing(
+        self, mock_role_session, mock_boto3_resource
+    ):
         from src.functions.api.lookup_profile.handler import handler
-
-        mock_table.query.return_value = {"Items": []}
 
         event = _create_event({"team": "marketing", "featureName": "chatbot"})
         result = handler(event, MagicMock())
 
-        assert result["lambdaReturnCode"] == 404
+        assert result["lambdaReturnCode"] == 400
+        response = json.loads(result["response"])
+        assert "modelId" in response["message"]
 
-    def test_returns_active_profile_with_inference(self, mock_role_session, mock_table):
+    def test_returns_not_found_when_no_item(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
         from src.functions.api.lookup_profile.handler import handler
 
-        mock_table.query.return_value = {
-            "Items": [
-                {
-                    "profile_id": "01HXYZ",
-                    "team": "marketing",
-                    "feature_name": "chatbot",
-                    "model_id": "anthropic.claude-sonnet-4-20250514",
-                    "status": "ACTIVE",
-                    "inference_profile_arn": "arn:aws:bedrock:us-east-1:042279143912:application-inference-profile/abc123",
-                    "inference_profile_id": "abc123",
-                    "created_at": "2026-03-10T15:00:00Z",
-                    "updated_at": "2026-03-10T15:00:05Z",
-                }
-            ]
+        mock_table.get_item.return_value = {}
+
+        event = _create_event(
+            {
+                "team": "marketing",
+                "featureName": "chatbot",
+                "modelId": "anthropic.claude-sonnet-4-20250514",
+            }
+        )
+        result = handler(event, MagicMock())
+
+        assert result["lambdaReturnCode"] == 404
+        mock_table.get_item.assert_called_once_with(
+            Key={
+                "pk": "PROFILE",
+                "sk": "TEAM#marketing#FEATURE#chatbot#MODEL#anthropic.claude-sonnet-4-20250514",
+            },
+            ConsistentRead=True,
+        )
+
+    def test_returns_active_profile_with_inference(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
+        from src.functions.api.lookup_profile.handler import handler
+
+        mock_table.get_item.return_value = {
+            "Item": {
+                "profile_id": "01HXYZ",
+                "team": "marketing",
+                "feature_name": "chatbot",
+                "model_id": "anthropic.claude-sonnet-4-20250514",
+                "status": "ACTIVE",
+                "inference_profile_arn": "arn:aws:bedrock:us-east-1:042279143912:application-inference-profile/abc123",
+                "inference_profile_id": "abc123",
+                "created_at": "2026-03-10T15:00:00Z",
+                "updated_at": "2026-03-10T15:00:05Z",
+            }
         }
 
-        event = _create_event({"team": "marketing", "featureName": "chatbot"})
+        event = _create_event(
+            {
+                "team": "marketing",
+                "featureName": "chatbot",
+                "modelId": "anthropic.claude-sonnet-4-20250514",
+            }
+        )
         result = handler(event, MagicMock())
 
         assert result["lambdaReturnCode"] == 200
@@ -121,25 +159,31 @@ class TestLookupProfileHandler:
         )
         assert response["inferenceProfileId"] == "abc123"
 
-    def test_returns_failed_profile_with_error(self, mock_role_session, mock_table):
+    def test_returns_failed_profile_with_error(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
         from src.functions.api.lookup_profile.handler import handler
 
-        mock_table.query.return_value = {
-            "Items": [
-                {
-                    "profile_id": "01HXYZ",
-                    "team": "marketing",
-                    "feature_name": "chatbot",
-                    "model_id": "anthropic.claude-sonnet-4-20250514",
-                    "status": "FAILED",
-                    "error_message": "Model not available",
-                    "created_at": "2026-03-10T15:00:00Z",
-                    "updated_at": "2026-03-10T15:00:05Z",
-                }
-            ]
+        mock_table.get_item.return_value = {
+            "Item": {
+                "profile_id": "01HXYZ",
+                "team": "marketing",
+                "feature_name": "chatbot",
+                "model_id": "anthropic.claude-sonnet-4-20250514",
+                "status": "FAILED",
+                "error_message": "Model not available",
+                "created_at": "2026-03-10T15:00:00Z",
+                "updated_at": "2026-03-10T15:00:05Z",
+            }
         }
 
-        event = _create_event({"team": "marketing", "featureName": "chatbot"})
+        event = _create_event(
+            {
+                "team": "marketing",
+                "featureName": "chatbot",
+                "modelId": "anthropic.claude-sonnet-4-20250514",
+            }
+        )
         result = handler(event, MagicMock())
 
         assert result["lambdaReturnCode"] == 200
@@ -147,24 +191,30 @@ class TestLookupProfileHandler:
         assert response["status"] == "FAILED"
         assert response["error"] == "Model not available"
 
-    def test_returns_provisioning_profile(self, mock_role_session, mock_table):
+    def test_returns_provisioning_profile(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
         from src.functions.api.lookup_profile.handler import handler
 
-        mock_table.query.return_value = {
-            "Items": [
-                {
-                    "profile_id": "01HXYZ",
-                    "team": "marketing",
-                    "feature_name": "chatbot",
-                    "model_id": "anthropic.claude-sonnet-4-20250514",
-                    "status": "PROVISIONING",
-                    "created_at": "2026-03-10T15:00:00Z",
-                    "updated_at": "2026-03-10T15:00:00Z",
-                }
-            ]
+        mock_table.get_item.return_value = {
+            "Item": {
+                "profile_id": "01HXYZ",
+                "team": "marketing",
+                "feature_name": "chatbot",
+                "model_id": "anthropic.claude-sonnet-4-20250514",
+                "status": "PROVISIONING",
+                "created_at": "2026-03-10T15:00:00Z",
+                "updated_at": "2026-03-10T15:00:00Z",
+            }
         }
 
-        event = _create_event({"team": "marketing", "featureName": "chatbot"})
+        event = _create_event(
+            {
+                "team": "marketing",
+                "featureName": "chatbot",
+                "modelId": "anthropic.claude-sonnet-4-20250514",
+            }
+        )
         result = handler(event, MagicMock())
 
         assert result["lambdaReturnCode"] == 200

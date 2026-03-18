@@ -1,10 +1,12 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import boto3
 import ulid
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 from domain.common.controller import RestUtil
 from domain.common.error import InvalidRequestError, LimitError
 from ncino.handler import ALambdaHandler
@@ -31,30 +33,18 @@ class Handler(ALambdaHandler):
         table_name = os.environ["databaseTableName"]
         index_name = os.environ["databaseTableGsi1Name"]
         max_profiles = int(os.environ.get("MAX_PROFILES_PER_TEAM", "10"))
+        max_teams = int(os.environ.get("MAX_TEAMS", "2"))
+        region = os.environ.get("region", "us-east-1")
 
-        dynamodb = self.assume_profile_role().resource("dynamodb")
+        dynamodb = boto3.resource("dynamodb", region_name=region)
         table = dynamodb.Table(table_name)
 
-        gsi1pk = f"T#{self.tenant_id}#TEAM#{team}"
+        gsi1pk = f"TEAM#{team}"
 
-        # Duplicate check: exact match on team + profileName
-        dup_response = table.query(
-            IndexName=index_name,
-            KeyConditionExpression=(
-                Key("gsi1pk").eq(gsi1pk) & Key("gsi1sk").eq(f"PROFILE#{feature_name}")
-            ),
-        )
-        for existing in dup_response.get("Items", []):
-            if existing.get("status") in ("ACTIVE", "PROVISIONING"):
-                raise InvalidRequestError(
-                    f"Profile already exists for team={team}, featureName={feature_name}"
-                )
-
-        # Quota check: count ACTIVE + PROVISIONING profiles for this team
         quota_response = table.query(
             IndexName=index_name,
             KeyConditionExpression=(
-                Key("gsi1pk").eq(gsi1pk) & Key("gsi1sk").begins_with("PROFILE#")
+                Key("gsi1pk").eq(gsi1pk) & Key("gsi1sk").begins_with("FEATURE#")
             ),
         )
         active_count = sum(
@@ -67,12 +57,26 @@ class Handler(ALambdaHandler):
                 f"Team '{team}' has reached the maximum of {max_profiles} profiles"
             )
 
+        is_new_team = active_count == 0
+        if is_new_team:
+            all_profiles = table.query(
+                KeyConditionExpression=Key("pk").eq("PROFILE"),
+                ProjectionExpression="team",
+            )
+            existing_teams = {item["team"] for item in all_profiles.get("Items", [])}
+            if team not in existing_teams and len(existing_teams) >= max_teams:
+                raise LimitError(
+                    f"Maximum number of teams ({max_teams}) has been reached"
+                )
+
         profile_id = str(ulid.new())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
+        now_iso = now.isoformat()
+        expires_at = int((now + timedelta(hours=1)).timestamp())
 
         item = {
-            "pk": f"T#{self.tenant_id}#PROFILE",
-            "sk": f"PROFILE#{profile_id}",
+            "pk": "PROFILE",
+            "sk": f"TEAM#{team}#FEATURE#{feature_name}#MODEL#{model_id}",
             "type": "PROFILE",
             "profile_id": profile_id,
             "team": team,
@@ -83,13 +87,26 @@ class Handler(ALambdaHandler):
             "inference_profile_id": None,
             "error_message": None,
             "tags": tags,
-            "created_at": now,
-            "updated_at": now,
+            "created_at": now_iso,
+            "updated_at": now_iso,
+            "expires_at": expires_at,
             "gsi1pk": gsi1pk,
-            "gsi1sk": f"PROFILE#{feature_name}",
+            "gsi1sk": f"FEATURE#{feature_name}#MODEL#{model_id}",
         }
 
-        table.put_item(Item=item)
+        try:
+            table.put_item(
+                Item=item,
+                ConditionExpression="attribute_not_exists(pk) OR #status = :failed",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={":failed": "FAILED"},
+            )
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                raise InvalidRequestError(
+                    f"Profile already exists for team={team}, featureName={feature_name}, modelId={model_id}"
+                )
+            raise
 
         return self.return_http_response(
             201,
@@ -99,7 +116,7 @@ class Handler(ALambdaHandler):
                 "featureName": feature_name,
                 "modelId": model_id,
                 "status": "PROVISIONING",
-                "createdAt": now,
+                "createdAt": now_iso,
             },
         )
 

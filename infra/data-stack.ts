@@ -1,10 +1,10 @@
-import { Feature, Stack, TenantPartitionedTable } from '@ncino/aws-cdk';
+import { Feature, Stack } from '@ncino/aws-cdk';
 import { RemovalPolicy, StackProps } from 'aws-cdk-lib';
-import { AttributeType, StreamViewType } from 'aws-cdk-lib/aws-dynamodb';
+import { AttributeType, BillingMode, StreamViewType, Table } from 'aws-cdk-lib/aws-dynamodb';
 
 export class DataStack extends Stack {
   private feature: Feature;
-  public databaseTable: TenantPartitionedTable;
+  public databaseTable: Table;
   public databaseTableGsi1Name: string;
 
   constructor(scope: Feature, id: string, props?: StackProps) {
@@ -21,20 +21,23 @@ export class DataStack extends Stack {
       'bedrock:GetInferenceProfile',
       'bedrock:DeleteInferenceProfile',
       'bedrock:ListInferenceProfiles',
-      'bedrock:TagResource',
-      'bedrock:InvokeModel'
+      'bedrock:TagResource'
     ]);
   }
 
-  private createDatabaseTable(removalPolicy: RemovalPolicy): TenantPartitionedTable {
+  private createDatabaseTable(removalPolicy: RemovalPolicy): Table {
     const tableName: string = this.getFullName('Database');
-    const table = new TenantPartitionedTable(this, tableName, {
+    const table = new Table(this, tableName, {
       tableName,
-      tenantKey: 'pk',
+      partitionKey: {
+        name: 'pk',
+        type: AttributeType.STRING
+      },
       sortKey: {
         name: 'sk',
         type: AttributeType.STRING
       },
+      billingMode: BillingMode.PAY_PER_REQUEST,
       removalPolicy,
       stream: StreamViewType.NEW_AND_OLD_IMAGES,
       timeToLiveAttribute: 'expires_at'

@@ -1,8 +1,10 @@
 import json
 import os
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 
 
 @pytest.fixture(autouse=True)
@@ -16,6 +18,7 @@ def mock_env_vars():
             "databaseTableGsi1Name": "gsi1",
             "service": "intelligent-feature-registry",
             "MAX_PROFILES_PER_TEAM": "10",
+            "MAX_TEAMS": "2",
         },
     ):
         yield
@@ -30,18 +33,17 @@ def mock_table():
 
 
 @pytest.fixture
-def mock_session(mock_table):
-    session = MagicMock()
+def mock_boto3_resource(mock_table):
     dynamodb = MagicMock()
     dynamodb.Table.return_value = mock_table
-    session.resource.return_value = dynamodb
-    return session
+    with patch("src.functions.api.register_profile.handler.boto3") as mock_boto3:
+        mock_boto3.resource.return_value = dynamodb
+        yield mock_boto3
 
 
 @pytest.fixture
-def mock_role_session(mock_session):
+def mock_role_session():
     with patch("ncino.handler.RoleSessionCache") as mock_cache_cls:
-        mock_cache_cls.return_value.get_session.return_value = mock_session
         yield mock_cache_cls
 
 
@@ -53,7 +55,9 @@ def _create_event(body: dict) -> dict:
 
 
 class TestRegisterProfileHandler:
-    def test_returns_tenant_not_found_when_no_tenant(self, mock_role_session):
+    def test_returns_tenant_not_found_when_no_tenant(
+        self, mock_role_session, mock_boto3_resource
+    ):
         from src.functions.api.register_profile.handler import handler
 
         mock_role_session.return_value.get_session.side_effect = Exception("no role")
@@ -65,7 +69,9 @@ class TestRegisterProfileHandler:
         response = json.loads(result["response"])
         assert response["type"] == "not_found_error"
 
-    def test_returns_error_when_team_missing(self, mock_role_session):
+    def test_returns_error_when_team_missing(
+        self, mock_role_session, mock_boto3_resource
+    ):
         from src.functions.api.register_profile.handler import handler
 
         event = _create_event({"featureName": "chatbot", "modelId": "test"})
@@ -75,7 +81,9 @@ class TestRegisterProfileHandler:
         response = json.loads(result["response"])
         assert "team" in response["message"]
 
-    def test_returns_error_when_profile_name_missing(self, mock_role_session):
+    def test_returns_error_when_profile_name_missing(
+        self, mock_role_session, mock_boto3_resource
+    ):
         from src.functions.api.register_profile.handler import handler
 
         event = _create_event({"team": "marketing", "modelId": "test"})
@@ -85,7 +93,9 @@ class TestRegisterProfileHandler:
         response = json.loads(result["response"])
         assert "featureName" in response["message"]
 
-    def test_returns_error_when_model_id_missing(self, mock_role_session):
+    def test_returns_error_when_model_id_missing(
+        self, mock_role_session, mock_boto3_resource
+    ):
         from src.functions.api.register_profile.handler import handler
 
         event = _create_event({"team": "marketing", "featureName": "chatbot"})
@@ -95,7 +105,9 @@ class TestRegisterProfileHandler:
         response = json.loads(result["response"])
         assert "modelId" in response["message"]
 
-    def test_returns_provisioning_response(self, mock_role_session, mock_table):
+    def test_returns_provisioning_response(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
         from src.functions.api.register_profile.handler import handler
 
         event = _create_event(
@@ -116,7 +128,9 @@ class TestRegisterProfileHandler:
         assert "id" in response
         assert "createdAt" in response
 
-    def test_writes_correct_dynamo_item(self, mock_role_session, mock_table):
+    def test_writes_correct_dynamo_item(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
         from src.functions.api.register_profile.handler import handler
 
         event = _create_event(
@@ -130,42 +144,36 @@ class TestRegisterProfileHandler:
         handler(event, MagicMock())
 
         mock_table.put_item.assert_called_once()
-        item = mock_table.put_item.call_args[1]["Item"]
-        assert item["pk"] == "T#TestTenant#PROFILE"
-        assert item["sk"].startswith("PROFILE#")
+        call_kwargs = mock_table.put_item.call_args[1]
+        item = call_kwargs["Item"]
+        assert item["pk"] == "PROFILE"
+        assert (
+            item["sk"]
+            == "TEAM#marketing#FEATURE#chatbot#MODEL#anthropic.claude-sonnet-4-20250514"
+        )
         assert item["type"] == "PROFILE"
         assert item["team"] == "marketing"
         assert item["feature_name"] == "chatbot"
+        assert item["model_id"] == "anthropic.claude-sonnet-4-20250514"
         assert item["status"] == "PROVISIONING"
-        assert item["gsi1pk"] == "T#TestTenant#TEAM#marketing"
-        assert item["gsi1sk"] == "PROFILE#chatbot"
-        assert item["tags"] == {"env": "demo"}
-
-    def test_rejects_duplicate_active_profile(self, mock_role_session, mock_table):
-        from src.functions.api.register_profile.handler import handler
-
-        mock_table.query.return_value = {
-            "Items": [{"status": "ACTIVE", "feature_name": "chatbot"}]
-        }
-
-        event = _create_event(
-            {"team": "marketing", "featureName": "chatbot", "modelId": "test"}
+        assert item["gsi1pk"] == "TEAM#marketing"
+        assert (
+            item["gsi1sk"] == "FEATURE#chatbot#MODEL#anthropic.claude-sonnet-4-20250514"
         )
-        result = handler(event, MagicMock())
+        assert item["tags"] == {"env": "demo"}
+        assert isinstance(item["expires_at"], int)
+        assert item["expires_at"] > int(time.time())
+        assert "ConditionExpression" in call_kwargs
 
-        assert result["lambdaReturnCode"] == 400
-        response = json.loads(result["response"])
-        assert "already exists" in response["message"]
-        mock_table.put_item.assert_not_called()
-
-    def test_rejects_duplicate_provisioning_profile(
-        self, mock_role_session, mock_table
+    def test_rejects_duplicate_active_profile(
+        self, mock_role_session, mock_boto3_resource, mock_table
     ):
         from src.functions.api.register_profile.handler import handler
 
-        mock_table.query.return_value = {
-            "Items": [{"status": "PROVISIONING", "feature_name": "chatbot"}]
-        }
+        mock_table.put_item.side_effect = ClientError(
+            {"Error": {"Code": "ConditionalCheckFailedException", "Message": ""}},
+            "PutItem",
+        )
 
         event = _create_event(
             {"team": "marketing", "featureName": "chatbot", "modelId": "test"}
@@ -175,16 +183,11 @@ class TestRegisterProfileHandler:
         assert result["lambdaReturnCode"] == 400
         response = json.loads(result["response"])
         assert "already exists" in response["message"]
-        mock_table.put_item.assert_not_called()
 
-    def test_allows_reregister_after_failed(self, mock_role_session, mock_table):
+    def test_allows_reregister_after_failed(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
         from src.functions.api.register_profile.handler import handler
-
-        # First query (dup check) returns FAILED item, second query (quota) returns same
-        mock_table.query.side_effect = [
-            {"Items": [{"status": "FAILED", "feature_name": "chatbot"}]},
-            {"Items": [{"status": "FAILED", "feature_name": "chatbot"}]},
-        ]
 
         event = _create_event(
             {"team": "marketing", "featureName": "chatbot", "modelId": "test"}
@@ -194,17 +197,15 @@ class TestRegisterProfileHandler:
         assert result["lambdaReturnCode"] == 201
         mock_table.put_item.assert_called_once()
 
-    def test_rejects_when_quota_exceeded(self, mock_role_session, mock_table):
+    def test_rejects_when_quota_exceeded(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
         from src.functions.api.register_profile.handler import handler
 
         active_items = [
             {"status": "ACTIVE", "feature_name": f"profile-{i}"} for i in range(10)
         ]
-        # First query (dup check) returns no match, second query (quota) returns 10 active
-        mock_table.query.side_effect = [
-            {"Items": []},
-            {"Items": active_items},
-        ]
+        mock_table.query.return_value = {"Items": active_items}
 
         event = _create_event(
             {"team": "marketing", "featureName": "new-profile", "modelId": "test"}
@@ -216,17 +217,15 @@ class TestRegisterProfileHandler:
         assert "maximum" in response["message"]
         mock_table.put_item.assert_not_called()
 
-    def test_failed_profiles_excluded_from_quota(self, mock_role_session, mock_table):
+    def test_failed_profiles_excluded_from_quota(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
         from src.functions.api.register_profile.handler import handler
 
         items = [
             {"status": "ACTIVE", "feature_name": f"profile-{i}"} for i in range(9)
         ] + [{"status": "FAILED", "feature_name": "failed-one"}]
-        # First query (dup check) no match, second query (quota) 9 active + 1 failed
-        mock_table.query.side_effect = [
-            {"Items": []},
-            {"Items": items},
-        ]
+        mock_table.query.return_value = {"Items": items}
 
         event = _create_event(
             {"team": "marketing", "featureName": "new-profile", "modelId": "test"}
@@ -236,16 +235,15 @@ class TestRegisterProfileHandler:
         assert result["lambdaReturnCode"] == 201
         mock_table.put_item.assert_called_once()
 
-    def test_quota_uses_env_var_value(self, mock_role_session, mock_table):
+    def test_quota_uses_env_var_value(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
         from src.functions.api.register_profile.handler import handler
 
         active_items = [
             {"status": "ACTIVE", "feature_name": f"profile-{i}"} for i in range(3)
         ]
-        mock_table.query.side_effect = [
-            {"Items": []},
-            {"Items": active_items},
-        ]
+        mock_table.query.return_value = {"Items": active_items}
 
         with patch.dict(os.environ, {"MAX_PROFILES_PER_TEAM": "3"}):
             event = _create_event(
@@ -256,3 +254,101 @@ class TestRegisterProfileHandler:
         assert result["lambdaReturnCode"] == 400
         response = json.loads(result["response"])
         assert "3" in response["message"]
+
+    def test_allows_new_team_under_limit(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
+        from src.functions.api.register_profile.handler import handler
+
+        mock_table.query.side_effect = [
+            {"Items": []},
+            {"Items": [{"team": "existing-team"}]},
+        ]
+
+        event = _create_event(
+            {"team": "new-team", "featureName": "chatbot", "modelId": "test"}
+        )
+        result = handler(event, MagicMock())
+
+        assert result["lambdaReturnCode"] == 201
+        mock_table.put_item.assert_called_once()
+
+    def test_rejects_new_team_when_max_teams_reached(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
+        from src.functions.api.register_profile.handler import handler
+
+        existing_teams = [{"team": f"team-{i}"} for i in range(2)]
+        mock_table.query.side_effect = [
+            {"Items": []},
+            {"Items": existing_teams},
+        ]
+
+        event = _create_event(
+            {"team": "new-team", "featureName": "chatbot", "modelId": "test"}
+        )
+        result = handler(event, MagicMock())
+
+        assert result["lambdaReturnCode"] == 400
+        response = json.loads(result["response"])
+        assert "Maximum number of teams" in response["message"]
+        mock_table.put_item.assert_not_called()
+
+    def test_allows_existing_team_when_max_teams_reached(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
+        from src.functions.api.register_profile.handler import handler
+
+        mock_table.query.return_value = {
+            "Items": [{"status": "ACTIVE", "feature_name": "chatbot"}]
+        }
+
+        event = _create_event(
+            {"team": "marketing", "featureName": "new-feature", "modelId": "test"}
+        )
+        result = handler(event, MagicMock())
+
+        assert result["lambdaReturnCode"] == 201
+        assert mock_table.query.call_count == 1
+
+    def test_allows_existing_team_with_only_failed_profiles_when_max_teams_reached(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
+        from src.functions.api.register_profile.handler import handler
+
+        existing_teams = [{"team": f"team-{i}"} for i in range(2)] + [
+            {"team": "marketing"}
+        ]
+        mock_table.query.side_effect = [
+            {"Items": [{"status": "FAILED", "feature_name": "old"}]},
+            {"Items": existing_teams},
+        ]
+
+        event = _create_event(
+            {"team": "marketing", "featureName": "chatbot", "modelId": "test"}
+        )
+        result = handler(event, MagicMock())
+
+        assert result["lambdaReturnCode"] == 201
+        mock_table.put_item.assert_called_once()
+
+    def test_team_limit_uses_env_var_value(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
+        from src.functions.api.register_profile.handler import handler
+
+        existing_teams = [{"team": f"team-{i}"} for i in range(5)]
+        mock_table.query.side_effect = [
+            {"Items": []},
+            {"Items": existing_teams},
+        ]
+
+        with patch.dict(os.environ, {"MAX_TEAMS": "5"}):
+            event = _create_event(
+                {"team": "new-team", "featureName": "chatbot", "modelId": "test"}
+            )
+            result = handler(event, MagicMock())
+
+        assert result["lambdaReturnCode"] == 400
+        response = json.loads(result["response"])
+        assert "5" in response["message"]

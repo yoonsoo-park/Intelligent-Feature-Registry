@@ -125,6 +125,13 @@ export class ApiStack extends Stack {
           required: true,
           type: JsonSchemaType.STRING,
           source: ParameterSource.QUERY_STRING
+        },
+        {
+          name: 'modelId',
+          mappingName: 'modelId',
+          required: true,
+          type: JsonSchemaType.STRING,
+          source: ParameterSource.QUERY_STRING
         }
       ],
       { stageVariable: 'LookupProfile', enableCustomStatusCodes: true }
@@ -146,6 +153,13 @@ export class ApiStack extends Stack {
         {
           name: 'featureName',
           mappingName: 'featureName',
+          required: true,
+          type: JsonSchemaType.STRING,
+          source: ParameterSource.QUERY_STRING
+        },
+        {
+          name: 'modelId',
+          mappingName: 'modelId',
           required: true,
           type: JsonSchemaType.STRING,
           source: ParameterSource.QUERY_STRING
