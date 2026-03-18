@@ -20,7 +20,8 @@
     "lint:tsc": "eslint . --ext .js,.ts --quiet",
     "lint:python": "UV_NATIVE_TLS=true uv run ruff check .",
     "test": "npm run test:python",
-    "test:python": "UV_NATIVE_TLS=true uv run pytest --cov --cov-report term-missing"
+    "test:python": "UV_NATIVE_TLS=true uv run pytest --cov --cov-report term-missing",
+    "test:integration": "UV_NATIVE_TLS=true uv run pytest tests/integration/ -v"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",
