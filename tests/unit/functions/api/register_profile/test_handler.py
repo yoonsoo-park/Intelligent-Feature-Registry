@@ -16,7 +16,7 @@ def mock_env_vars():
             "featureRoleArn": "arn:aws:iam::042279143912:role/test-role",
             "databaseTableName": "test-table",
             "databaseTableGsi1Name": "gsi1",
-            "service": "intelligent-feature-registry",
+            "service": "intel-feature-registry",
             "MAX_PROFILES_PER_TEAM": "10",
             "MAX_TEAMS": "2",
         },

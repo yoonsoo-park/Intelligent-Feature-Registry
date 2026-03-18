@@ -12,7 +12,7 @@ The ADR "Option 2: Direct Bedrock Access via Inference Profiles (SDK-Enforced)" 
 
 > "SDK encapsulates governance, usage attribution, and policy logic in a reusable, versioned library"
 
-This decision record analyzes how the Intelligent Feature Registry (formerly Intelligent Gateway) applies Option 2 while avoiding a critical historical mistake made by the AWS Platform team.
+This decision record analyzes how the Intel Feature Registry (formerly Intelligent Gateway) applies Option 2 while avoiding a critical historical mistake made by the AWS Platform team.
 
 ### Historical mistake — AWS Platform SDK antipattern
 
@@ -26,7 +26,7 @@ The root cause: **centralized services should have handled partitioning/encrypti
 
 ### Current system
 
-The Intelligent Feature Registry is a centralized API service that manages Bedrock inference profile lifecycle:
+The Intel Feature Registry is a centralized API service that manages Bedrock inference profile lifecycle:
 
 - `POST /profiles` — Register a profile (triggers async provisioning via DynamoDB Stream)
 - `GET /profiles` — Look up an active profile's inference profile ARN
@@ -76,7 +76,7 @@ const res = await fetch(`${REGISTRY_URL}/profiles?team=marketing&featureName=cha
 const { inferenceProfileArn } = await res.json();
 ```
 
-### 4. Naming: Intelligent Gateway → Intelligent Feature Registry
+### 4. Naming: Intelligent Gateway → Intel Feature Registry
 
 The system is a registry (register/lookup/delete profiles), not a gateway (proxy). It does not proxy Bedrock calls. "Feature Registry" accurately reflects its role as a team-feature-based inference profile registry.
 

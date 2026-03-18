@@ -12,7 +12,7 @@ def mock_env_vars():
         {
             "region": "us-east-1",
             "featureRoleArn": "arn:aws:iam::042279143912:role/test-role",
-            "service": "intelligent-feature-registry",
+            "service": "intel-feature-registry",
             "ALLOWED_PROVIDERS": "anthropic,amazon",
         },
     ):

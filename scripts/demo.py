@@ -54,7 +54,7 @@ def main():
         )
         return
 
-    print("=== Intelligent Feature Registry Demo ===\n")
+    print("=== Intel Feature Registry Demo ===\n")
 
     print("Step 1: Register a new profile")
     result = register_profile(

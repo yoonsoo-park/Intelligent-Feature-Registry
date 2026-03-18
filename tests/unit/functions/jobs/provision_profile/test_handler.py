@@ -14,7 +14,7 @@ def mock_env_vars():
             "databaseTableName": "test-table",
             "databaseTableGsi1Name": "gsi1",
             "awsAccountId": "042279143912",
-            "service": "intelligent-feature-registry",
+            "service": "intel-feature-registry",
         },
     ):
         yield

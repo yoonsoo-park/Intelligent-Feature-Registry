@@ -1,7 +1,7 @@
 {
-  "app": "npx ts-node infra/intelligent-feature-registry.ts",
+  "app": "npx ts-node infra/intel-feature-registry.ts",
   "context": {
-    "appName": "Intelligent-Feature-Registry",
+    "appName": "Intel-Feature-Registry",
     "tags": {
       "owner": "gen-ai-platform@ncino.com",
       "uai": "UAI0142"

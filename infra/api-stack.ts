@@ -49,9 +49,9 @@ export class ApiStack extends Stack {
 
     const gateway: ApiGateway = new ApiGateway(
       this,
-      Utility.createResourceName('intelligent-feature-registry', this.feature.node.tryGetContext('suffix')),
+      Utility.createResourceName('intel-feature-registry', this.feature.node.tryGetContext('suffix')),
       {
-        name: Utility.createResourceName('intelligent-feature-registry', this.feature.node.tryGetContext('suffix')),
+        name: Utility.createResourceName('intel-feature-registry', this.feature.node.tryGetContext('suffix')),
         description: 'API for the Intelligent Feature Registry',
         retainDeployments: true,
         targetStageType: this.getContext('deploymentStage') || ApiStageType.BLUE,
@@ -60,7 +60,7 @@ export class ApiStack extends Stack {
         disableDocumentation: true
       }
     );
-    this.feature.registerResource('intelligent-feature-registry', gateway);
+    this.feature.registerResource('intel-feature-registry', gateway);
     this.createApi(gateway, props);
     this.feature.addApiGatewayAccess('IntelligentGatewayAPI', gateway.arnForExecuteApi());
   }

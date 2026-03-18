@@ -1,15 +1,15 @@
 {
-  "name": "@ncino/intelligent-feature-registry",
+  "name": "@ncino/intel-feature-registry",
   "version": "0.1.0",
   "engines": {
     "node": ">=22.0.0"
   },
   "author": "ncino",
   "scripts": {
-    "aws:deploy": "npx cdk deploy Intelligent-Feature-Registry-IamStack-$(whoami | tr -d .) -c devMode=true -c suffix=$(whoami | tr -d .) -c deploymentStage=blue -c temporary=true --require-approval never --method direct --asset-parallelism",
-    "aws:deploy:lambda:blue": "npx cdk deploy Intelligent-Feature-Registry-LambdaStack-$(whoami | tr -d .)-blue -c devMode=true -c suffix=$(whoami | tr -d .) -c deploymentStage=blue -c temporary=true --require-approval never --method direct --asset-parallelism",
-    "aws:deploy:lambda:green": "npx cdk deploy Intelligent-Feature-Registry-LambdaStack-$(whoami | tr -d .)-green -c devMode=true -c suffix=$(whoami | tr -d .) -c deploymentStage=green -c temporary=true --require-approval never --method direct --asset-parallelism",
-    "aws:destroy": "npx cdk destroy Intelligent-Feature-Registry-IamStack-$(whoami | tr -d .) -c devMode=true -c suffix=$(whoami | tr -d .) -c deploymentStage=blue -c temporary=true --force --require-approval never",
+    "aws:deploy": "npx cdk deploy Intel-Feature-Registry-IamStack-$(whoami | tr -d .) -c devMode=true -c suffix=$(whoami | tr -d .) -c deploymentStage=blue -c temporary=true --require-approval never --method direct --asset-parallelism",
+    "aws:deploy:lambda:blue": "npx cdk deploy Intel-Feature-Registry-LambdaStack-$(whoami | tr -d .)-blue -c devMode=true -c suffix=$(whoami | tr -d .) -c deploymentStage=blue -c temporary=true --require-approval never --method direct --asset-parallelism",
+    "aws:deploy:lambda:green": "npx cdk deploy Intel-Feature-Registry-LambdaStack-$(whoami | tr -d .)-green -c devMode=true -c suffix=$(whoami | tr -d .) -c deploymentStage=green -c temporary=true --require-approval never --method direct --asset-parallelism",
+    "aws:destroy": "npx cdk destroy Intel-Feature-Registry-IamStack-$(whoami | tr -d .) -c devMode=true -c suffix=$(whoami | tr -d .) -c deploymentStage=blue -c temporary=true --force --require-approval never",
     "build": "npm run build:tsc && npm run build:python",
     "build:tsc": "tsc && npm run format:tsc",
     "build:python": "UV_NATIVE_TLS=true uv sync && npm run format:python",

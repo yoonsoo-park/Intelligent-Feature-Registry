@@ -104,7 +104,7 @@ class Handler(ALambdaHandler):
             {"key": "profile_id", "value": profile_id},
             {
                 "key": "managed_by",
-                "value": "intelligent-feature-registry",
+                "value": "intel-feature-registry",
             },  # is this necessary?
         ]
         if isinstance(tags, dict):

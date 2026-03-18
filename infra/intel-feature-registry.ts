@@ -9,7 +9,7 @@ const deployRegion = process.env.CDK_DEPLOY_REGION || process.env.CDK_DEFAULT_RE
 
 console.log('🛠 Feature');
 const feature = new Feature({
-  name: 'intelligent-feature-registry',
+  name: 'intel-feature-registry',
   description: 'Intelligent Feature Registry for Bedrock inference profile provisioning',
   standardFeature: false
 });
@@ -28,7 +28,7 @@ if (Utility.isDevopsAccount()) {
 
   console.log('🛠 Data Stack');
   const dataStack = new DataStack(feature, feature.getFullName('DataStack'), {
-    description: 'Contains data resources for intelligent-feature-registry.',
+    description: 'Contains data resources for intel-feature-registry.',
     env: {
       account: deployAccount,
       region: deployRegion
@@ -38,7 +38,7 @@ if (Utility.isDevopsAccount()) {
 
   console.log('🛠 Lambda Stack');
   const lambdaStack = new LambdaStack(feature, `${feature.getFullName('LambdaStack')}-${stageName}`, {
-    description: 'Contains lambda functions for intelligent-feature-registry.',
+    description: 'Contains lambda functions for intel-feature-registry.',
     env: {
       account: deployAccount,
       region: deployRegion
@@ -53,7 +53,7 @@ if (Utility.isDevopsAccount()) {
 
   console.log('🛠 Api Stack');
   const apiStack = new ApiStack(feature, feature.getFullName('ApiStack'), {
-    description: 'Contains APIs for intelligent-feature-registry.',
+    description: 'Contains APIs for intel-feature-registry.',
     env: {
       account: deployAccount,
       region: deployRegion
