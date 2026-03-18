@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import boto3
@@ -8,17 +8,6 @@ from aws_lambda_powertools.utilities.data_classes.dynamo_db_stream_event import 
 )
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from ncino.handler import ALambdaHandler
-
-SUPPORTED_MODELS = {
-    "anthropic.claude-sonnet-4-20250514": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0",
-    "anthropic.claude-sonnet-4-20250514-v1:0": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0",
-    "anthropic.claude-3-5-sonnet-20241022-v2:0": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0",
-    "anthropic.claude-3-haiku-20240307-v1:0": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0",
-    "anthropic.claude-3-5-haiku-20241022-v1:0": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-5-haiku-20241022-v1:0",
-    "amazon.nova-micro-v1:0": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-micro-v1:0",
-    "amazon.nova-lite-v1:0": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-lite-v1:0",
-    "amazon.nova-pro-v1:0": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0",
-}
 
 
 class Handler(ALambdaHandler):
@@ -44,7 +33,6 @@ class Handler(ALambdaHandler):
             )
 
             try:
-                # Verify item still exists and is still PROVISIONING before calling Bedrock
                 table_name = os.environ["databaseTableName"]
                 region = os.environ.get("region", "us-east-1")
                 dynamodb = boto3.resource("dynamodb", region_name=region)
@@ -60,9 +48,17 @@ class Handler(ALambdaHandler):
                 profile_arn, inf_profile_id = self._create_inference_profile(
                     profile_id, team, feature_name, model_id, tags
                 )
-                self._update_profile_status(
-                    pk, sk, "ACTIVE", profile_arn, inf_profile_id
-                )
+                try:
+                    self._update_profile_status(
+                        pk, sk, "ACTIVE", profile_arn, inf_profile_id
+                    )
+                except Exception:
+                    self.logger.error(
+                        f"DDB update failed after creating inference profile {profile_arn}, "
+                        f"rolling back Bedrock resource"
+                    )
+                    self._rollback_inference_profile(profile_arn)
+                    raise
                 self.logger.info(
                     f"Successfully provisioned inference profile {inf_profile_id} "
                     f"for profile {profile_id}"
@@ -73,6 +69,18 @@ class Handler(ALambdaHandler):
                 )
                 self._update_profile_status(pk, sk, "FAILED", error_message=str(ex))
 
+    def _resolve_model_source(self, model_id: str, region: str, bedrock_client) -> str:
+        cris_id = f"us.{model_id}"
+        try:
+            resp = bedrock_client.get_inference_profile(
+                inferenceProfileIdentifier=cris_id
+            )
+            if resp.get("status") == "ACTIVE":
+                return resp["inferenceProfileArn"]
+        except bedrock_client.exceptions.ResourceNotFoundException:
+            pass
+        return f"arn:aws:bedrock:{region}::foundation-model/{model_id}"
+
     def _create_inference_profile(
         self,
         profile_id: str,
@@ -82,20 +90,22 @@ class Handler(ALambdaHandler):
         tags: dict,
     ) -> tuple[str, str]:
         region = os.environ.get("region", "us-east-1")
-
-        model_arn = SUPPORTED_MODELS.get(model_id)
-        if not model_arn:
-            model_arn = f"arn:aws:bedrock:{region}::foundation-model/{model_id}"
-
-        inf_profile_name = f"ig-{team}-{feature_name}-{profile_id[:8]}"
-
         bedrock_client = boto3.client("bedrock", region_name=region)
+
+        model_arn = self._resolve_model_source(model_id, region, bedrock_client)
+
+        model_short = model_id.rsplit(".", 1)[-1] if "." in model_id else model_id
+        inf_profile_name = f"ig-{team}-{feature_name}-{model_short}-{profile_id[:8]}"
 
         bedrock_tags = [
             {"key": "team", "value": team},
             {"key": "feature", "value": feature_name},
+            {"key": "model_id", "value": model_id},
             {"key": "profile_id", "value": profile_id},
-            {"key": "managed_by", "value": "intelligent-feature-registry"},
+            {
+                "key": "managed_by",
+                "value": "intelligent-feature-registry",
+            },  # is this necessary?
         ]
         if isinstance(tags, dict):
             for k, v in tags.items():
@@ -103,7 +113,7 @@ class Handler(ALambdaHandler):
 
         response = bedrock_client.create_inference_profile(
             inferenceProfileName=inf_profile_name,
-            description=f"ig.{team}.{feature_name}",
+            description=f"ig.{team}.{feature_name}.{model_short}",
             modelSource={"copyFrom": model_arn},
             tags=bedrock_tags,
         )
@@ -112,6 +122,19 @@ class Handler(ALambdaHandler):
         inf_profile_id = profile_arn.split("/")[-1]
 
         return profile_arn, inf_profile_id
+
+    def _rollback_inference_profile(self, profile_arn: str) -> None:
+        region = os.environ.get("region", "us-east-1")
+        bedrock_client = boto3.client("bedrock", region_name=region)
+        try:
+            bedrock_client.delete_inference_profile(
+                inferenceProfileIdentifier=profile_arn
+            )
+            self.logger.info(f"Rolled back inference profile {profile_arn}")
+        except Exception as rollback_ex:
+            self.logger.error(
+                f"Failed to rollback inference profile {profile_arn}: {rollback_ex}"
+            )
 
     def _update_profile_status(
         self,
@@ -129,6 +152,7 @@ class Handler(ALambdaHandler):
         now = datetime.now(timezone.utc).isoformat()
 
         update_expr = "SET #status = :status, updated_at = :now"
+        remove_attrs = []
         expr_names = {"#status": "status"}
         expr_values: dict = {":status": status, ":now": now}
 
@@ -141,9 +165,22 @@ class Handler(ALambdaHandler):
             update_expr += ", error_message = :err"
             expr_values[":err"] = error_message[:1000]
 
+        if status == "ACTIVE":
+            remove_attrs.append("expires_at")
+        elif status == "FAILED":
+            expires_at = int(
+                (datetime.now(timezone.utc) + timedelta(days=7)).timestamp()
+            )
+            update_expr += ", expires_at = :ttl"
+            expr_values[":ttl"] = expires_at
+
+        if remove_attrs:
+            update_expr += " REMOVE " + ", ".join(remove_attrs)
+
         table.update_item(
             Key={"pk": pk, "sk": sk},
             UpdateExpression=update_expr,
+            ConditionExpression="attribute_exists(pk)",
             ExpressionAttributeNames=expr_names,
             ExpressionAttributeValues=expr_values,
         )
