@@ -19,7 +19,7 @@ Architecture: API Gateway -> Lambda -> DynamoDB -> DynamoDB Stream -> Provisione
 
 ## Test Commands
 - Run Python tests: `npm run test` or `uv run pytest`
-- Run single test: `uv run pytest tests/unit/functions/api/register_feature/test_handler.py -v`
+- Run single test: `uv run pytest tests/unit/functions/api/register_profile/test_handler.py -v`
 
 ## Code Style Guidelines
 - TypeScript: camelCase, single quotes, no trailing commas, 120 char width

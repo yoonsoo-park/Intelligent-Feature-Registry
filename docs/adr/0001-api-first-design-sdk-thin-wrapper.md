@@ -58,19 +58,21 @@ The system works without any SDK:
 
 ```bash
 # curl — no SDK needed
-curl -s "$REGISTRY_URL/profiles?team=marketing&featureName=chatbot" | jq '.inferenceProfileArn'
+curl -s "$REGISTRY_URL/profiles?team=marketing&featureName=chatbot&modelId=anthropic.claude-sonnet-4-20250514" | jq '.inferenceProfileArn'
 ```
 
 ```python
 # Python — no SDK needed
-resp = requests.get(f"{REGISTRY_URL}/profiles?team=marketing&featureName=chatbot")
+resp = requests.get(f"{REGISTRY_URL}/profiles", params={
+    "team": "marketing", "featureName": "chatbot", "modelId": "anthropic.claude-sonnet-4-20250514"
+})
 arn = resp.json()["inferenceProfileArn"]
 bedrock.converse(modelId=arn, ...)
 ```
 
 ```typescript
 // TypeScript — no SDK needed
-const res = await fetch(`${REGISTRY_URL}/profiles?team=marketing&featureName=chatbot`);
+const res = await fetch(`${REGISTRY_URL}/profiles?team=marketing&featureName=chatbot&modelId=anthropic.claude-sonnet-4-20250514`);
 const { inferenceProfileArn } = await res.json();
 ```
 
@@ -127,6 +129,31 @@ Key insight: **SDK wrapping does not add enforcement.** If a team bypasses the S
 | SDK required for multitenancy | `curl` can do everything the SDK does | No |
 | Python SDK → Python lock-in | API is the contract → language agnostic | No |
 | New language = SDK port required | `GET /profiles` → 10 lines in any language | No |
+
+---
+
+## Inference profile strategy: internal vs external
+
+### Internal (current phase)
+
+Inference profiles are shared at the **team + feature + model** level. Tenant isolation is unnecessary — all internal teams belong to the same organization.
+
+- DDB key: `PK=PROFILE`, `SK=TEAM#{team}#FEATURE#{feature}#MODEL#{model_id}`
+- One inference profile per team+feature+model combination
+- AWS inference profile limit: 1,000 per account per region. Shared profiles keep usage well within this limit
+- Authentication: valid nCino tenant credential required to call API. Trust-based access within the organization
+- Cost monitoring: CloudWatch Alarms auto-created per inference profile at provisioning time
+
+### External (future — when platform is sold to other banks)
+
+Account-level isolation replaces tenant-level isolation:
+
+- Each customer gets a dedicated AWS account (Option 3 — multi-account strategy)
+- Feature Registry creates inference profiles in the customer's account via cross-account role assume
+- Account boundary = security boundary. No application-level tenant isolation needed
+- Billing: AWS Organizations consolidated billing + inference profile tags for per-customer cost tracking
+
+Key insight: **the transition from internal to external does not require DDB schema changes.** The API contract (team + feature + model) stays the same. Only the provisioning backend changes (which account to create the profile in).
 
 ---
 
