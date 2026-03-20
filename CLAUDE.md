@@ -6,6 +6,12 @@ This file provides guidance to Claude Code when working with code in this reposi
 Intel Feature Registry - automates Bedrock inference profile provisioning for development teams.
 Architecture: API Gateway -> Lambda -> DynamoDB -> DynamoDB Stream -> Provisioner Lambda -> Bedrock
 
+## AWS Account Rules
+- **NEVER deploy to account 714322698969.** This is the shared GenAI account. All deployments must target the dev account (042279143912).
+- Before running any deploy command, verify the active AWS profile targets account 042279143912 by running `aws sts get-caller-identity`.
+- Integration tests use `AWS_PROFILE=team-tenant` which targets 042279143912.
+- API Gateway URL (dev): `https://jp0hxi56qd.execute-api.us-east-1.amazonaws.com/blue`
+
 ## Build Commands
 - Build everything: `npm run build`
 - Build TypeScript: `npm run build:tsc`
