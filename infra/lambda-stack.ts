@@ -8,6 +8,7 @@ import { ITable } from 'aws-cdk-lib/aws-dynamodb';
 import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import path = require('path');
 import fs = require('fs');
+import os = require('os');
 
 export interface LambdaStackProps extends StageableStackProps {
   databaseTable: ITable;
@@ -116,15 +117,19 @@ export class LambdaStack extends StageableStack {
 
   private getBundlingOptions(): BundlingOptions {
     // Mount host CA cert bundle into Docker for Zscaler/corporate proxy TLS
-    const hostCertPath = '/etc/ssl/cert.pem';
+    const zscalerCert = path.join(os.homedir(), 'combined-ca-bundle.pem');
+    const hostCertPath = fs.existsSync(zscalerCert) ? zscalerCert : '/etc/ssl/cert.pem';
     const hasCert = fs.existsSync(hostCertPath);
-    const volumes: DockerVolume[] = hasCert
-      ? [{ hostPath: hostCertPath, containerPath: '/etc/ssl/certs/ca-certificates.crt' }]
-      : [];
+    const containerCertPath = '/etc/ssl/certs/ca-certificates.crt';
+    const volumes: DockerVolume[] = hasCert ? [{ hostPath: hostCertPath, containerPath: containerCertPath }] : [];
     return {
       environment: {
         UV_NATIVE_TLS: 'true',
-        ...(hasCert && { SSL_CERT_FILE: '/etc/ssl/certs/ca-certificates.crt' })
+        ...(hasCert && {
+          SSL_CERT_FILE: containerCertPath,
+          PIP_CERT: containerCertPath,
+          REQUESTS_CA_BUNDLE: containerCertPath
+        })
       },
       volumes
     };
