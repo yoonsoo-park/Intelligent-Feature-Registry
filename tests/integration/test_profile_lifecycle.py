@@ -1,6 +1,5 @@
 import pytest
 
-
 MODEL_ID = "anthropic.claude-sonnet-4-20250514-v1:0"
 
 
@@ -43,4 +42,5 @@ class TestProfileLifecycle:
         assert resp.json()["status"] == "DELETED"
 
         resp = api_client.lookup_profile(team, feature, MODEL_ID)
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "DELETED"

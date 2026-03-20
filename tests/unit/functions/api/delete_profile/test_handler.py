@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -157,11 +158,17 @@ class TestDeleteProfileHandler:
             inferenceProfileIdentifier="arn:aws:bedrock:us-east-1:042279143912:application-inference-profile/abc123"
         )
 
-        mock_table.delete_item.assert_called_once_with(
-            Key={
-                "pk": "PROFILE",
-                "sk": "TEAM#marketing#FEATURE#chatbot#MODEL#anthropic.claude-sonnet-4-20250514",
-            }
+        mock_table.update_item.assert_called_once()
+        update_kwargs = mock_table.update_item.call_args[1]
+        assert update_kwargs["Key"] == {
+            "pk": "PROFILE",
+            "sk": "TEAM#marketing#FEATURE#chatbot#MODEL#anthropic.claude-sonnet-4-20250514",
+        }
+        assert update_kwargs["ExpressionAttributeValues"][":status"] == "DELETED"
+        assert isinstance(update_kwargs["ExpressionAttributeValues"][":ttl"], int)
+        assert (
+            "REMOVE inference_profile_arn, inference_profile_id"
+            in update_kwargs["UpdateExpression"]
         )
 
     @pytest.mark.parametrize("status", ["FAILED", "PROVISIONING"])
@@ -189,9 +196,33 @@ class TestDeleteProfileHandler:
         response = json.loads(result["response"])
         assert response["status"] == "DELETED"
 
-        mock_table.delete_item.assert_called_once_with(
-            Key={
+        mock_table.update_item.assert_called_once()
+        update_kwargs = mock_table.update_item.call_args[1]
+        assert update_kwargs["ExpressionAttributeValues"][":status"] == "DELETED"
+        assert isinstance(update_kwargs["ExpressionAttributeValues"][":ttl"], int)
+
+    def test_soft_delete_sets_30_day_ttl(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
+        from src.functions.api.delete_profile.handler import handler
+
+        mock_table.get_item.return_value = {
+            "Item": {
                 "pk": "PROFILE",
                 "sk": "TEAM#marketing#FEATURE#chatbot#MODEL#test",
+                "profile_id": "01HXYZ",
+                "status": "PROVISIONING",
+                "inference_profile_arn": None,
             }
+        }
+
+        event = _create_event(
+            {"team": "marketing", "featureName": "chatbot", "modelId": "test"}
         )
+        handler(event, MagicMock())
+
+        update_kwargs = mock_table.update_item.call_args[1]
+        ttl = update_kwargs["ExpressionAttributeValues"][":ttl"]
+        now = int(time.time())
+        assert ttl > now + (29 * 86400)
+        assert ttl < now + (31 * 86400)

@@ -221,3 +221,35 @@ class TestLookupProfileHandler:
         response = json.loads(result["response"])
         assert response["status"] == "PROVISIONING"
         assert "inferenceProfileArn" not in response
+
+    def test_returns_deleted_profile(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
+        from src.functions.api.lookup_profile.handler import handler
+
+        mock_table.get_item.return_value = {
+            "Item": {
+                "profile_id": "01HXYZ",
+                "team": "marketing",
+                "feature_name": "chatbot",
+                "model_id": "anthropic.claude-sonnet-4-20250514",
+                "status": "DELETED",
+                "created_at": "2026-03-10T15:00:00Z",
+                "updated_at": "2026-03-15T12:00:00Z",
+            }
+        }
+
+        event = _create_event(
+            {
+                "team": "marketing",
+                "featureName": "chatbot",
+                "modelId": "anthropic.claude-sonnet-4-20250514",
+            }
+        )
+        result = handler(event, MagicMock())
+
+        assert result["lambdaReturnCode"] == 200
+        response = json.loads(result["response"])
+        assert response["status"] == "DELETED"
+        assert response["deletedAt"] == "2026-03-15T12:00:00Z"
+        assert "inferenceProfileArn" not in response

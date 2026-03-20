@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import boto3
@@ -55,7 +56,19 @@ class Handler(ALambdaHandler):
             except bedrock_client.exceptions.ResourceNotFoundException:
                 pass
 
-        table.delete_item(Key=key)
+        now = datetime.now(timezone.utc)
+        expires_at = int((now + timedelta(days=30)).timestamp())
+
+        table.update_item(
+            Key=key,
+            UpdateExpression="SET #status = :status, updated_at = :now, expires_at = :ttl REMOVE inference_profile_arn, inference_profile_id",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={
+                ":status": "DELETED",
+                ":now": now.isoformat(),
+                ":ttl": expires_at,
+            },
+        )
 
         return self.return_http_response(
             200,

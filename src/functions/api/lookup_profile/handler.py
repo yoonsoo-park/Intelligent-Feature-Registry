@@ -62,6 +62,8 @@ class Handler(ALambdaHandler):
             result["inferenceProfileId"] = item.get("inference_profile_id")
         elif status == "FAILED":
             result["error"] = item.get("error_message")
+        elif status == "DELETED":
+            result["deletedAt"] = item.get("updated_at")
 
         return self.return_http_response(200, result)
 
