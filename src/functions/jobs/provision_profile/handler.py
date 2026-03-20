@@ -70,17 +70,21 @@ class Handler(ALambdaHandler):
                 self._update_profile_status(pk, sk, "FAILED", error_message=str(ex))
 
     def _resolve_model_source(self, model_id: str, region: str, bedrock_client) -> str:
-        cris_id = f"us.{model_id}"
-        try:
-            resp = bedrock_client.get_inference_profile(
-                inferenceProfileIdentifier=cris_id
-            )
-            if resp.get("status") == "ACTIVE":
-                return resp["inferenceProfileArn"]
-        except bedrock_client.exceptions.ResourceNotFoundException:
-            pass
+        cris_response = bedrock_client.list_inference_profiles(
+            typeEquals="SYSTEM_DEFINED"
+        )
+        for profile in cris_response.get("inferenceProfileSummaries", []):
+            if profile.get("status") != "ACTIVE":
+                continue
+            pid = profile.get("inferenceProfileId", "")
+            if pid.startswith("global."):
+                continue
+            foundation_model_id = pid.split(".", 1)[1] if "." in pid else pid
+            if foundation_model_id == model_id:
+                return profile["inferenceProfileArn"]
         return f"arn:aws:bedrock:{region}::foundation-model/{model_id}"
 
+    # TODO(phase-2): reconciliation job to detect orphaned Bedrock profiles after DDB TTL expiry
     def _create_inference_profile(
         self,
         profile_id: str,

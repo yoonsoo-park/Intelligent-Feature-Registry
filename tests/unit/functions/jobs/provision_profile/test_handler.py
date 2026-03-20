@@ -91,9 +91,14 @@ class TestProvisionProfileHandler:
     @patch("src.functions.jobs.provision_profile.handler.boto3")
     def test_creates_inference_profile_with_cris_source(self, mock_boto3):
         mock_bedrock = MagicMock()
-        mock_bedrock.get_inference_profile.return_value = {
-            "status": "ACTIVE",
-            "inferenceProfileArn": CRIS_ARN,
+        mock_bedrock.list_inference_profiles.return_value = {
+            "inferenceProfileSummaries": [
+                {
+                    "inferenceProfileId": "us.anthropic.claude-sonnet-4-20250514",
+                    "inferenceProfileArn": CRIS_ARN,
+                    "status": "ACTIVE",
+                }
+            ]
         }
         mock_bedrock.create_inference_profile.return_value = {
             "inferenceProfileArn": APP_PROFILE_ARN
@@ -104,8 +109,8 @@ class TestProvisionProfileHandler:
 
         handler(_create_stream_event(STREAM_IMAGE), MagicMock())
 
-        mock_bedrock.get_inference_profile.assert_called_once_with(
-            inferenceProfileIdentifier="us.anthropic.claude-sonnet-4-20250514"
+        mock_bedrock.list_inference_profiles.assert_called_once_with(
+            typeEquals="SYSTEM_DEFINED"
         )
         call_kwargs = mock_bedrock.create_inference_profile.call_args[1]
         assert call_kwargs["inferenceProfileName"].startswith(
@@ -121,12 +126,9 @@ class TestProvisionProfileHandler:
     @patch("src.functions.jobs.provision_profile.handler.boto3")
     def test_falls_back_to_foundation_model_when_cris_not_found(self, mock_boto3):
         mock_bedrock = MagicMock()
-        mock_bedrock.exceptions.ResourceNotFoundException = type(
-            "ResourceNotFoundException", (Exception,), {}
-        )
-        mock_bedrock.get_inference_profile.side_effect = (
-            mock_bedrock.exceptions.ResourceNotFoundException("not found")
-        )
+        mock_bedrock.list_inference_profiles.return_value = {
+            "inferenceProfileSummaries": []
+        }
         mock_bedrock.create_inference_profile.return_value = {
             "inferenceProfileArn": APP_PROFILE_ARN
         }
@@ -145,9 +147,14 @@ class TestProvisionProfileHandler:
     @patch("src.functions.jobs.provision_profile.handler.boto3")
     def test_handles_bedrock_error(self, mock_boto3):
         mock_bedrock = MagicMock()
-        mock_bedrock.get_inference_profile.return_value = {
-            "status": "ACTIVE",
-            "inferenceProfileArn": CRIS_ARN,
+        mock_bedrock.list_inference_profiles.return_value = {
+            "inferenceProfileSummaries": [
+                {
+                    "inferenceProfileId": "us.anthropic.claude-sonnet-4-20250514",
+                    "inferenceProfileArn": CRIS_ARN,
+                    "status": "ACTIVE",
+                }
+            ]
         }
         mock_bedrock.create_inference_profile.side_effect = Exception("Quota exceeded")
         mock_table = _setup_boto3(mock_boto3, mock_bedrock)
@@ -219,11 +226,40 @@ class TestProvisionProfileHandler:
         mock_table.update_item.assert_not_called()
 
     @patch("src.functions.jobs.provision_profile.handler.boto3")
+    def test_skips_global_cris_profiles(self, mock_boto3):
+        mock_bedrock = MagicMock()
+        mock_bedrock.list_inference_profiles.return_value = {
+            "inferenceProfileSummaries": [
+                {
+                    "inferenceProfileId": "global.anthropic.claude-sonnet-4-20250514",
+                    "inferenceProfileArn": "arn:aws:bedrock:us-east-1:123:inference-profile/global.anthropic.claude-sonnet-4-20250514",
+                    "status": "ACTIVE",
+                }
+            ]
+        }
+        mock_bedrock.create_inference_profile.return_value = {
+            "inferenceProfileArn": APP_PROFILE_ARN
+        }
+        _setup_boto3(mock_boto3, mock_bedrock)
+
+        from src.functions.jobs.provision_profile.handler import handler
+
+        handler(_create_stream_event(STREAM_IMAGE), MagicMock())
+
+        call_kwargs = mock_bedrock.create_inference_profile.call_args[1]
+        assert call_kwargs["modelSource"]["copyFrom"] == FOUNDATION_ARN
+
+    @patch("src.functions.jobs.provision_profile.handler.boto3")
     def test_rolls_back_bedrock_profile_when_ddb_update_fails(self, mock_boto3):
         mock_bedrock = MagicMock()
-        mock_bedrock.get_inference_profile.return_value = {
-            "status": "ACTIVE",
-            "inferenceProfileArn": CRIS_ARN,
+        mock_bedrock.list_inference_profiles.return_value = {
+            "inferenceProfileSummaries": [
+                {
+                    "inferenceProfileId": "us.anthropic.claude-sonnet-4-20250514",
+                    "inferenceProfileArn": CRIS_ARN,
+                    "status": "ACTIVE",
+                }
+            ]
         }
         mock_bedrock.create_inference_profile.return_value = {
             "inferenceProfileArn": APP_PROFILE_ARN
