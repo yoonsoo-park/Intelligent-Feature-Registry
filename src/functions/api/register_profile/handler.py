@@ -12,6 +12,17 @@ from domain.common.error import InvalidRequestError, LimitError
 from ncino.handler import ALambdaHandler
 
 
+def _query_all_items(table, **kwargs) -> list[dict]:
+    items = []
+    while True:
+        response = table.query(**kwargs)
+        items.extend(response.get("Items", []))
+        if "LastEvaluatedKey" not in response:
+            break
+        kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+    return items
+
+
 class Handler(ALambdaHandler):
     @RestUtil.handle_errors
     def main(self, event: dict, context: LambdaContext) -> Any:
@@ -41,7 +52,8 @@ class Handler(ALambdaHandler):
 
         gsi1pk = f"TEAM#{team}"
 
-        quota_response = table.query(
+        quota_items = _query_all_items(
+            table,
             IndexName=index_name,
             KeyConditionExpression=(
                 Key("gsi1pk").eq(gsi1pk) & Key("gsi1sk").begins_with("FEATURE#")
@@ -49,7 +61,7 @@ class Handler(ALambdaHandler):
         )
         active_count = sum(
             1
-            for item in quota_response.get("Items", [])
+            for item in quota_items
             if item.get("status") in ("ACTIVE", "PROVISIONING")
         )
         if active_count >= max_profiles:
@@ -59,11 +71,12 @@ class Handler(ALambdaHandler):
 
         is_new_team = active_count == 0
         if is_new_team:
-            all_profiles = table.query(
+            all_profile_items = _query_all_items(
+                table,
                 KeyConditionExpression=Key("pk").eq("PROFILE"),
                 ProjectionExpression="team",
             )
-            existing_teams = {item["team"] for item in all_profiles.get("Items", [])}
+            existing_teams = {item["team"] for item in all_profile_items}
             if team not in existing_teams and len(existing_teams) >= max_teams:
                 raise LimitError(
                     f"Maximum number of teams ({max_teams}) has been reached"
@@ -97,9 +110,9 @@ class Handler(ALambdaHandler):
         try:
             table.put_item(
                 Item=item,
-                ConditionExpression="attribute_not_exists(pk) OR #status = :failed",
+                ConditionExpression="attribute_not_exists(pk) OR #status IN (:failed, :deleted)",
                 ExpressionAttributeNames={"#status": "status"},
-                ExpressionAttributeValues={":failed": "FAILED"},
+                ExpressionAttributeValues={":failed": "FAILED", ":deleted": "DELETED"},
             )
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":

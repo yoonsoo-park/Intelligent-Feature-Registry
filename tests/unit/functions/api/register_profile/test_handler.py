@@ -164,6 +164,7 @@ class TestRegisterProfileHandler:
         assert isinstance(item["expires_at"], int)
         assert item["expires_at"] > int(time.time())
         assert "ConditionExpression" in call_kwargs
+        assert call_kwargs["ExpressionAttributeValues"][":deleted"] == "DELETED"
 
     def test_rejects_duplicate_active_profile(
         self, mock_role_session, mock_boto3_resource, mock_table
@@ -352,3 +353,68 @@ class TestRegisterProfileHandler:
         assert result["lambdaReturnCode"] == 400
         response = json.loads(result["response"])
         assert "5" in response["message"]
+
+    def test_allows_reregister_after_deleted(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
+        from src.functions.api.register_profile.handler import handler
+
+        event = _create_event(
+            {"team": "marketing", "featureName": "chatbot", "modelId": "test"}
+        )
+        result = handler(event, MagicMock())
+
+        assert result["lambdaReturnCode"] == 201
+        call_kwargs = mock_table.put_item.call_args[1]
+        assert call_kwargs["ExpressionAttributeValues"][":deleted"] == "DELETED"
+
+    def test_quota_check_paginates_through_all_pages(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
+        from src.functions.api.register_profile.handler import handler
+
+        page1 = {
+            "Items": [{"status": "ACTIVE", "feature_name": f"p-{i}"} for i in range(5)],
+            "LastEvaluatedKey": {"pk": "PROFILE", "sk": "TEAM#..."},
+        }
+        page2 = {
+            "Items": [
+                {"status": "ACTIVE", "feature_name": f"p-{i}"} for i in range(5, 10)
+            ],
+        }
+        mock_table.query.side_effect = [page1, page2]
+
+        event = _create_event(
+            {"team": "marketing", "featureName": "new", "modelId": "test"}
+        )
+        result = handler(event, MagicMock())
+
+        assert result["lambdaReturnCode"] == 400
+        response = json.loads(result["response"])
+        assert "maximum" in response["message"]
+        assert mock_table.query.call_count == 2
+
+    def test_team_count_paginates_through_all_pages(
+        self, mock_role_session, mock_boto3_resource, mock_table
+    ):
+        from src.functions.api.register_profile.handler import handler
+
+        quota_response = {"Items": []}
+        teams_page1 = {
+            "Items": [{"team": "team-0"}, {"team": "team-1"}],
+            "LastEvaluatedKey": {"pk": "PROFILE", "sk": "TEAM#..."},
+        }
+        teams_page2 = {
+            "Items": [{"team": "team-1"}],
+        }
+        mock_table.query.side_effect = [quota_response, teams_page1, teams_page2]
+
+        event = _create_event(
+            {"team": "new-team", "featureName": "chatbot", "modelId": "test"}
+        )
+        result = handler(event, MagicMock())
+
+        assert result["lambdaReturnCode"] == 400
+        response = json.loads(result["response"])
+        assert "Maximum number of teams" in response["message"]
+        assert mock_table.query.call_count == 3
